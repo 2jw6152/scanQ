@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../parsing/csat_parser.dart';
 import '../models/csat_question.dart';
@@ -16,7 +17,7 @@ class ScannerPage extends StatefulWidget {
 
 class _ScannerPageState extends State<ScannerPage> {
   CameraController? _controller;
-  late Future<void> _initializeControllerFuture;
+  Future<void>? _initializeControllerFuture;
 
   @override
   void initState() {
@@ -25,11 +26,40 @@ class _ScannerPageState extends State<ScannerPage> {
   }
 
   Future<void> _initializeCamera() async {
-    final cameras = await availableCameras();
-    final camera = cameras.first;
-    _controller = CameraController(camera, ResolutionPreset.medium);
-    _initializeControllerFuture = _controller!.initialize();
-    setState(() {});
+    final status = await Permission.camera.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Camera permission denied')),
+        );
+      }
+      return;
+    }
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No camera found')),
+          );
+        }
+        return;
+      }
+      final camera = cameras.first;
+      final controller = CameraController(camera, ResolutionPreset.medium);
+      _controller = controller;
+      _initializeControllerFuture = controller.initialize();
+      await _initializeControllerFuture;
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to initialize camera: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -39,27 +69,38 @@ class _ScannerPageState extends State<ScannerPage> {
   }
 
   Future<void> _scan() async {
-    if (_controller == null) return;
-    await _initializeControllerFuture;
-    final picture = await _controller!.takePicture();
-    final file = File(picture.path);
-    final inputImage = InputImage.fromFile(file);
-    final textRecognizer = TextRecognizer(script: TextRecognitionScript.korean);
-    final recognizedText = await textRecognizer.processImage(inputImage);
-    await textRecognizer.close();
+    if (_controller == null || _initializeControllerFuture == null) return;
+    try {
+      await _initializeControllerFuture;
+      final picture = await _controller!.takePicture();
+      final file = File(picture.path);
+      final inputImage = InputImage.fromFile(file);
+      final textRecognizer =
+          TextRecognizer(script: TextRecognitionScript.korean);
+      final recognizedText = await textRecognizer.processImage(inputImage);
+      await textRecognizer.close();
 
-    final parser = CSATParser();
-    final CSATQuestion question = parser.parse(recognizedText.text);
+      final parser = CSATParser();
+      final CSATQuestion question = parser.parse(recognizedText.text);
 
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Recognized Question'),
-        content: SingleChildScrollView(child: Text(question.body)),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-      ),
-    );
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Recognized Question'),
+          content: SingleChildScrollView(child: Text(question.body)),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'))
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to scan: $e')));
+    }
   }
 
   @override
@@ -68,21 +109,30 @@ class _ScannerPageState extends State<ScannerPage> {
       appBar: AppBar(title: const Text('Scan Question')),
       body: _controller == null
           ? const Center(child: CircularProgressIndicator())
-          : Stack(
-              children: [
-                CameraPreview(_controller!),
-                Positioned(
-                  bottom: 16,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: FloatingActionButton(
-                      onPressed: _scan,
-                      child: const Icon(Icons.camera_alt),
-                    ),
-                  ),
-                ),
-              ],
+          : FutureBuilder<void>(
+              future: _initializeControllerFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done) {
+                  return Stack(
+                    children: [
+                      CameraPreview(_controller!),
+                      Positioned(
+                        bottom: 16,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: FloatingActionButton(
+                            onPressed: _scan,
+                            child: const Icon(Icons.camera_alt),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                } else {
+                  return const Center(child: CircularProgressIndicator());
+                }
+              },
             ),
     );
   }
