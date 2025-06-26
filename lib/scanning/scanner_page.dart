@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../parsing/csat_parser.dart';
 import '../models/csat_question.dart';
@@ -25,15 +26,39 @@ class _ScannerPageState extends State<ScannerPage> {
   }
 
   Future<void> _initializeCamera() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) return;
-    final camera = cameras.first;
-    final controller = CameraController(camera, ResolutionPreset.medium);
-    _controller = controller;
-    _initializeControllerFuture = controller.initialize();
-    await _initializeControllerFuture;
-    if (mounted) {
-      setState(() {});
+    final status = await Permission.camera.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Camera permission denied')),
+        );
+      }
+      return;
+    }
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No camera found')),
+          );
+        }
+        return;
+      }
+      final camera = cameras.first;
+      final controller = CameraController(camera, ResolutionPreset.medium);
+      _controller = controller;
+      _initializeControllerFuture = controller.initialize();
+      await _initializeControllerFuture;
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to initialize camera: $e')),
+        );
+      }
     }
   }
 

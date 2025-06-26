@@ -22,4 +22,8 @@ The Android build requires camera permissions. Ensure that your
 <uses-permission android:name="android.permission.CAMERA" />
 ```
 
+On modern Android versions the app also requests camera access at runtime using
+the `permission_handler` plugin. Make sure you grant the permission when
+prompted, otherwise the scanner screen will show an error.
+
 If the platform folders are missing, run `flutter create .` to generate them.
