@@ -18,6 +18,7 @@ class ScannerPage extends StatefulWidget {
 class _ScannerPageState extends State<ScannerPage> {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
+  bool _isScanning = false;
 
   @override
   void initState() {
@@ -46,7 +47,8 @@ class _ScannerPageState extends State<ScannerPage> {
         return;
       }
       final camera = cameras.first;
-      final controller = CameraController(camera, ResolutionPreset.medium);
+      final controller =
+          CameraController(camera, ResolutionPreset.medium, enableAudio: false);
       _controller = controller;
       _initializeControllerFuture = controller.initialize();
       await _initializeControllerFuture;
@@ -69,7 +71,10 @@ class _ScannerPageState extends State<ScannerPage> {
   }
 
   Future<void> _scan() async {
-    if (_controller == null || _initializeControllerFuture == null) return;
+    if (_isScanning || _controller == null || _initializeControllerFuture == null) return;
+    setState(() {
+      _isScanning = true;
+    });
     try {
       await _initializeControllerFuture;
       final picture = await _controller!.takePicture();
@@ -97,9 +102,16 @@ class _ScannerPageState extends State<ScannerPage> {
         ),
       );
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to scan: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to scan: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+        });
+      }
     }
   }
 
@@ -116,6 +128,11 @@ class _ScannerPageState extends State<ScannerPage> {
                   return Stack(
                     children: [
                       CameraPreview(_controller!),
+                      if (_isScanning)
+                        Container(
+                          color: Colors.black45,
+                          child: const Center(child: CircularProgressIndicator()),
+                        ),
                       Positioned(
                         bottom: 16,
                         left: 0,

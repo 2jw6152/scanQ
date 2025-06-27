@@ -15,6 +15,9 @@ Run `flutter pub get` to install dependencies.
 
 Use `flutter run` to launch the app on an Android device or emulator.
 
+On the scanner screen tap the floating camera button to capture a photo. The
+recognized text is shown in a dialog so you can verify that OCR succeeded.
+
 The Android build requires camera permissions. Ensure that your
 `android/app/src/main/AndroidManifest.xml` includes:
 
