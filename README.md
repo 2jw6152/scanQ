@@ -7,7 +7,8 @@ ScanQ is a Flutter application for scanning CSAT-style questions using OCR.
 This project uses the following folders:
 
 - `lib/scanning` – camera and OCR logic
-- `lib/parsing` – parsing scanned text into question components
+- `lib/parsing` – parsing scanned text into question components, including
+  formula extraction
 - `lib/saving` – saving extracted questions
 - `lib/review` – reviewing saved questions
 
@@ -19,7 +20,8 @@ On the scanner screen tap the floating camera button to capture a photo. The
 recognized text is shown in a dialog so you can verify that OCR succeeded.
 After a question is detected the recognized region is highlighted on the
 preview. Only that portion of the captured image is processed which can help
-prevent crashes on low-memory devices.
+prevent crashes on low-memory devices. The parsed result now includes any
+mathematical formulas found in the text so you can verify them separately.
 
 ### Improving OCR quality
 
@@ -32,6 +34,9 @@ preprocesses them before OCR:
   make characters stand out.
 
 These steps help Google MLKit produce more accurate recognition results.
+
+Math formulas detected in the recognized text are extracted and stored with
+each question so they can be handled separately in the future.
 
 The Android build requires camera permissions. Ensure that your
 `android/app/src/main/AndroidManifest.xml` includes:
