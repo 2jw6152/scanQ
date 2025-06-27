@@ -6,6 +6,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../parsing/csat_parser.dart';
@@ -124,25 +125,19 @@ class _ScannerPageState extends State<ScannerPage> {
       }
       final bytes = allBytes.done().buffer.asUint8List();
 
-      final inputImageData = InputImageData(
+      final metadata = InputImageMetadata(
         size: Size(image.width.toDouble(), image.height.toDouble()),
-        imageRotation: InputImageRotationValue.fromRawValue(
+        rotation: InputImageRotationValue.fromRawValue(
                 _controller!.description.sensorOrientation) ??
             InputImageRotation.rotation0deg,
-        inputImageFormat:
+        format:
             InputImageFormatValue.fromRawValue(image.format.raw) ??
                 InputImageFormat.nv21,
-        planeData: image.planes
-            .map((plane) => InputImagePlaneMetadata(
-                  bytesPerRow: plane.bytesPerRow,
-                  height: plane.height,
-                  width: plane.width,
-                ))
-            .toList(),
+        bytesPerRow: image.planes.first.bytesPerRow,
       );
 
       final inputImage =
-          InputImage.fromBytes(bytes: bytes, inputImageData: inputImageData);
+          InputImage.fromBytes(bytes: bytes, metadata: metadata);
       final recognizedText = await _textRecognizer.processImage(inputImage);
 
       Rect? detected;
