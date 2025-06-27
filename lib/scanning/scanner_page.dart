@@ -133,7 +133,13 @@ class _ScannerPageState extends State<ScannerPage> {
         format:
             InputImageFormatValue.fromRawValue(image.format.raw) ??
                 InputImageFormat.nv21,
-        bytesPerRow: image.planes.first.bytesPerRow,
+        planeData: image.planes
+            .map((plane) => InputImagePlaneMetadata(
+                  bytesPerRow: plane.bytesPerRow,
+                  height: plane.height,
+                  width: plane.width,
+                ))
+            .toList(),
       );
 
       final inputImage =

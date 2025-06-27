@@ -36,6 +36,10 @@ preprocesses them before OCR:
 
 These steps help Google MLKit produce more accurate recognition results.
 
+Additionally the camera image stream now includes per-plane metadata so that
+MLKit receives the correct row stride information for YUV frames. This further
+reduces recognition errors on some devices.
+
 Math formulas detected in the recognized text are extracted and stored with
 each question so they can be handled separately in the future.
 The formula extractor now recognizes fractions like `1/2` or `a ÷ b` so
