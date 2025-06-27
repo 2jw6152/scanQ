@@ -113,10 +113,10 @@ class _ScannerPageState extends State<ScannerPage> {
         crop = _imageCropRect(original.width, original.height);
         final img.Image cropped = img.copyCrop(
           original,
-          crop.left.toInt(),
-          crop.top.toInt(),
-          crop.width.toInt(),
-          crop.height.toInt(),
+          x: crop.left.toInt(),
+          y: crop.top.toInt(),
+          width: crop.width.toInt(),
+          height: crop.height.toInt(),
         );
         final croppedPath = '${file.path}_crop.jpg';
         await File(croppedPath).writeAsBytes(img.encodeJpg(cropped));
