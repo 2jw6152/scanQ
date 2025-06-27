@@ -72,8 +72,9 @@ class _ScannerPageState extends State<ScannerPage> {
         return;
       }
       final camera = cameras.first;
+      // Use the highest available resolution to improve OCR accuracy.
       final controller =
-          CameraController(camera, ResolutionPreset.medium, enableAudio: false);
+          CameraController(camera, ResolutionPreset.max, enableAudio: false);
       _controller = controller;
       _initializeControllerFuture = controller.initialize();
       await _initializeControllerFuture;
@@ -110,16 +111,20 @@ class _ScannerPageState extends State<ScannerPage> {
       late final InputImage inputImage;
       Rect? crop;
       if (original != null) {
-        crop = _imageCropRect(original.width, original.height);
-        final img.Image cropped = img.copyCrop(
-          original,
+        // Correct the orientation and enhance the image for better recognition.
+        img.Image processed = img.bakeOrientation(original);
+        crop = _imageCropRect(processed.width, processed.height);
+        processed = img.copyCrop(
+          processed,
           x: crop.left.toInt(),
           y: crop.top.toInt(),
           width: crop.width.toInt(),
           height: crop.height.toInt(),
         );
+        processed = img.grayscale(processed);
+        processed = img.adjustColor(processed, contrast: 1.2);
         final croppedPath = '${file.path}_crop.jpg';
-        await File(croppedPath).writeAsBytes(img.encodeJpg(cropped));
+        await File(croppedPath).writeAsBytes(img.encodeJpg(processed));
         inputImage = InputImage.fromFilePath(croppedPath);
       } else {
         inputImage = InputImage.fromFile(file);

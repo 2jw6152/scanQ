@@ -21,6 +21,18 @@ After a question is detected the recognized region is highlighted on the
 preview. Only that portion of the captured image is processed which can help
 prevent crashes on low-memory devices.
 
+### Improving OCR quality
+
+ScanQ captures photos using the highest available camera resolution and
+preprocesses them before OCR:
+
+- The captured image orientation is fixed to avoid rotated text.
+- Only the region inside the scan box is cropped for processing.
+- The cropped image is converted to grayscale and the contrast is increased to
+  make characters stand out.
+
+These steps help Google MLKit produce more accurate recognition results.
+
 The Android build requires camera permissions. Ensure that your
 `android/app/src/main/AndroidManifest.xml` includes:
 
