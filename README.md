@@ -17,6 +17,9 @@ Use `flutter run` to launch the app on an Android device or emulator.
 
 On the scanner screen tap the floating camera button to capture a photo. The
 recognized text is shown in a dialog so you can verify that OCR succeeded.
+The preview displays a green bounding box representing the area that will be
+scanned. Only that portion of the captured image is processed which can help
+prevent crashes on low-memory devices.
 
 The Android build requires camera permissions. Ensure that your
 `android/app/src/main/AndroidManifest.xml` includes:

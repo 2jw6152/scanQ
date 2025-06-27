@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:image/image.dart' as img;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +20,28 @@ class _ScannerPageState extends State<ScannerPage> {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
   bool _isScanning = false;
+
+  // Relative scan area (percent of preview) shown with a bounding box.
+  static const Rect _relativeScanRect =
+      Rect.fromLTWH(0.1, 0.25, 0.8, 0.5); // left, top, width, height
+
+  Rect _calculateScanRect(Size size) {
+    return Rect.fromLTWH(
+      size.width * _relativeScanRect.left,
+      size.height * _relativeScanRect.top,
+      size.width * _relativeScanRect.width,
+      size.height * _relativeScanRect.height,
+    );
+  }
+
+  Rect _imageCropRect(int width, int height) {
+    return Rect.fromLTWH(
+      width * _relativeScanRect.left,
+      height * _relativeScanRect.top,
+      width * _relativeScanRect.width,
+      height * _relativeScanRect.height,
+    );
+  }
 
   @override
   void initState() {
@@ -79,7 +102,24 @@ class _ScannerPageState extends State<ScannerPage> {
       await _initializeControllerFuture;
       final picture = await _controller!.takePicture();
       final file = File(picture.path);
-      final inputImage = InputImage.fromFile(file);
+      final bytes = await file.readAsBytes();
+      final img.Image? original = img.decodeImage(bytes);
+      late final InputImage inputImage;
+      if (original != null) {
+        final crop = _imageCropRect(original.width, original.height);
+        final img.Image cropped = img.copyCrop(
+          original,
+          crop.left.toInt(),
+          crop.top.toInt(),
+          crop.width.toInt(),
+          crop.height.toInt(),
+        );
+        final croppedPath = '${file.path}_crop.jpg';
+        await File(croppedPath).writeAsBytes(img.encodeJpg(cropped));
+        inputImage = InputImage.fromFilePath(croppedPath);
+      } else {
+        inputImage = InputImage.fromFile(file);
+      }
       final textRecognizer =
           TextRecognizer(script: TextRecognitionScript.korean);
       final recognizedText = await textRecognizer.processImage(inputImage);
@@ -128,6 +168,19 @@ class _ScannerPageState extends State<ScannerPage> {
                   return Stack(
                     children: [
                       CameraPreview(_controller!),
+                      Positioned.fromRect(
+                        rect: _calculateScanRect(MediaQuery.of(context).size),
+                        child: IgnorePointer(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: Colors.greenAccent,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                       if (_isScanning)
                         Container(
                           color: Colors.black45,
