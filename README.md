@@ -16,8 +16,9 @@ Run `flutter pub get` to install dependencies.
 
 Use `flutter run` to launch the app on an Android device or emulator.
 
-On the scanner screen tap the floating camera button to capture a photo. The
-recognized text is shown in a dialog so you can verify that OCR succeeded. While
+On the scanner screen tap the floating camera button to capture a photo. After
+processing, the captured image is shown with green boxes around each detected
+text block so you can verify what was recognized. While
 the camera preview is running the app continuously performs lightweight OCR and
 draws a red bounding box over the scan area when text is detected. Only the
 scanning region is processed for the final capture which can help prevent
