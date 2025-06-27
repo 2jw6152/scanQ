@@ -13,4 +13,11 @@ void main() {
     expect(formulas, contains('1 + 2 = 3'));
     expect(formulas.any((f) => f.contains('x^2')), isTrue);
   });
+
+  test('math parser detects fractions', () {
+    const text = '분수 예: 3/4 + 1/2 = 5/4';
+    final parser = MathParser();
+    final formulas = parser.extractFormulas(text);
+    expect(formulas.any((f) => f.contains('3/4 + 1/2')), isTrue);
+  });
 }

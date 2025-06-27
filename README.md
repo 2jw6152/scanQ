@@ -37,6 +37,8 @@ These steps help Google MLKit produce more accurate recognition results.
 
 Math formulas detected in the recognized text are extracted and stored with
 each question so they can be handled separately in the future.
+The formula extractor now recognizes fractions like `1/2` or `a ÷ b` so
+expressions with division are parsed correctly.
 
 The Android build requires camera permissions. Ensure that your
 `android/app/src/main/AndroidManifest.xml` includes:
