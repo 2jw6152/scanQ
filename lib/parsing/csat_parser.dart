@@ -1,4 +1,5 @@
 import '../models/csat_question.dart';
+import 'math_parser.dart';
 
 class CSATParser {
   CSATQuestion parse(String text) {
@@ -13,6 +14,8 @@ class CSATParser {
       }
     }
     final body = lines.join('\n');
-    return CSATQuestion(number: number, body: body);
+    final mathParser = MathParser();
+    final formulas = mathParser.extractFormulas(text);
+    return CSATQuestion(number: number, body: body, formulas: formulas);
   }
 }

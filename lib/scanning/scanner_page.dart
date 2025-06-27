@@ -172,7 +172,19 @@ class _ScannerPageState extends State<ScannerPage> {
         context: context,
         builder: (_) => AlertDialog(
           title: const Text('Recognized Question'),
-          content: SingleChildScrollView(child: Text(question.body)),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(question.body),
+                if (question.formulas.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text('Formulas:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  for (final f in question.formulas) Text(f),
+                ],
+              ],
+            ),
+          ),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context),
