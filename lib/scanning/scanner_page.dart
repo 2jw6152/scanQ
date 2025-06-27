@@ -1,10 +1,12 @@
 import 'dart:io';
-import 'package:image/image.dart' as img;
 import 'dart:math' as math;
+import 'package:image/image.dart' as img;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../parsing/csat_parser.dart';
@@ -22,6 +24,12 @@ class _ScannerPageState extends State<ScannerPage> {
   Future<void>? _initializeControllerFuture;
   bool _isScanning = false;
   Rect? _detectedRect; // normalized rect within the scan area
+
+  bool _processingImage = false;
+  DateTime _lastDetection = DateTime.fromMillisecondsSinceEpoch(0);
+  static const _detectionInterval = Duration(milliseconds: 700);
+
+  late final TextRecognizer _textRecognizer;
 
   // Relative scan area (percent of preview) shown with a bounding box.
   static const Rect _relativeScanRect =
@@ -48,6 +56,7 @@ class _ScannerPageState extends State<ScannerPage> {
   @override
   void initState() {
     super.initState();
+    _textRecognizer = TextRecognizer(script: TextRecognitionScript.korean);
     _initializeCamera();
   }
 
@@ -73,11 +82,16 @@ class _ScannerPageState extends State<ScannerPage> {
       }
       final camera = cameras.first;
       // Use the highest available resolution to improve OCR accuracy.
-      final controller =
-          CameraController(camera, ResolutionPreset.max, enableAudio: false);
+      final controller = CameraController(
+        camera,
+        ResolutionPreset.max,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420,
+      );
       _controller = controller;
       _initializeControllerFuture = controller.initialize();
       await _initializeControllerFuture;
+      await controller.startImageStream(_processCameraImage);
       if (mounted) {
         setState(() {});
       }
@@ -92,8 +106,86 @@ class _ScannerPageState extends State<ScannerPage> {
 
   @override
   void dispose() {
+    _controller?.stopImageStream();
     _controller?.dispose();
+    _textRecognizer.close();
     super.dispose();
+  }
+
+  Future<void> _processCameraImage(CameraImage image) async {
+    if (_processingImage) return;
+    final now = DateTime.now();
+    if (now.difference(_lastDetection) < _detectionInterval) return;
+    _processingImage = true;
+    _lastDetection = now;
+    try {
+      final WriteBuffer allBytes = WriteBuffer();
+      for (final plane in image.planes) {
+        allBytes.putUint8List(plane.bytes);
+      }
+      final bytes = allBytes.done().buffer.asUint8List();
+
+      final metadata = InputImageMetadata(
+        size: Size(image.width.toDouble(), image.height.toDouble()),
+        rotation: InputImageRotationValue.fromRawValue(
+                _controller!.description.sensorOrientation) ??
+            InputImageRotation.rotation0deg,
+        format:
+            InputImageFormatValue.fromRawValue(image.format.raw) ??
+                InputImageFormat.nv21,
+        bytesPerRow: image.planes.first.bytesPerRow,
+      );
+
+      final inputImage =
+          InputImage.fromBytes(bytes: bytes, metadata: metadata);
+      final recognizedText = await _textRecognizer.processImage(inputImage);
+
+      Rect? detected;
+      if (recognizedText.blocks.isNotEmpty) {
+        double minX = double.infinity;
+        double minY = double.infinity;
+        double maxX = 0;
+        double maxY = 0;
+        for (final block in recognizedText.blocks) {
+          final box = block.boundingBox;
+          if (box != null) {
+            minX = math.min(minX, box.left.toDouble());
+            minY = math.min(minY, box.top.toDouble());
+            maxX = math.max(maxX, box.right.toDouble());
+            maxY = math.max(maxY, box.bottom.toDouble());
+          }
+        }
+        if (maxX > minX && maxY > minY) {
+          final w = image.width.toDouble();
+          final h = image.height.toDouble();
+          final rectNorm = Rect.fromLTRB(
+            minX / w,
+            minY / h,
+            maxX / w,
+            maxY / h,
+          );
+          final inter = rectNorm.intersect(_relativeScanRect);
+          if (!inter.isEmpty) {
+            detected = Rect.fromLTRB(
+              (inter.left - _relativeScanRect.left) / _relativeScanRect.width,
+              (inter.top - _relativeScanRect.top) / _relativeScanRect.height,
+              (inter.right - _relativeScanRect.left) / _relativeScanRect.width,
+              (inter.bottom - _relativeScanRect.top) / _relativeScanRect.height,
+            );
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _detectedRect = detected;
+        });
+      }
+    } catch (_) {
+      // ignore stream errors
+    } finally {
+      _processingImage = false;
+    }
   }
 
   Future<void> _scan() async {
@@ -104,6 +196,7 @@ class _ScannerPageState extends State<ScannerPage> {
     });
     try {
       await _initializeControllerFuture;
+      await _controller!.stopImageStream();
       final picture = await _controller!.takePicture();
       final file = File(picture.path);
       final bytes = await file.readAsBytes();
@@ -168,7 +261,7 @@ class _ScannerPageState extends State<ScannerPage> {
       });
 
       if (!mounted) return;
-      showDialog(
+      await showDialog(
         context: context,
         builder: (_) => AlertDialog(
           title: const Text('Recognized Question'),
@@ -192,6 +285,7 @@ class _ScannerPageState extends State<ScannerPage> {
           ],
         ),
       );
+      await _controller!.startImageStream(_processCameraImage);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
