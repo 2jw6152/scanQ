@@ -15,5 +15,6 @@ dependencies:
   permission_handler: ^10.2.0
   image: ^4.0.17
 
+
 flutter:
   uses-material-design: true
