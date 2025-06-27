@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:image/image.dart' as img;
+import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +21,7 @@ class _ScannerPageState extends State<ScannerPage> {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
   bool _isScanning = false;
+  Rect? _detectedRect; // normalized rect within the scan area
 
   // Relative scan area (percent of preview) shown with a bounding box.
   static const Rect _relativeScanRect =
@@ -97,6 +99,7 @@ class _ScannerPageState extends State<ScannerPage> {
     if (_isScanning || _controller == null || _initializeControllerFuture == null) return;
     setState(() {
       _isScanning = true;
+      _detectedRect = null;
     });
     try {
       await _initializeControllerFuture;
@@ -105,8 +108,9 @@ class _ScannerPageState extends State<ScannerPage> {
       final bytes = await file.readAsBytes();
       final img.Image? original = img.decodeImage(bytes);
       late final InputImage inputImage;
+      Rect? crop;
       if (original != null) {
-        final crop = _imageCropRect(original.width, original.height);
+        crop = _imageCropRect(original.width, original.height);
         final img.Image cropped = img.copyCrop(
           original,
           crop.left.toInt(),
@@ -125,8 +129,38 @@ class _ScannerPageState extends State<ScannerPage> {
       final recognizedText = await textRecognizer.processImage(inputImage);
       await textRecognizer.close();
 
+      Rect? detected;
+      if (recognizedText.blocks.isNotEmpty) {
+        double minX = double.infinity;
+        double minY = double.infinity;
+        double maxX = 0;
+        double maxY = 0;
+        for (final block in recognizedText.blocks) {
+          final box = block.boundingBox;
+          if (box != null) {
+            minX = math.min(minX, box.left.toDouble());
+            minY = math.min(minY, box.top.toDouble());
+            maxX = math.max(maxX, box.right.toDouble());
+            maxY = math.max(maxY, box.bottom.toDouble());
+          }
+        }
+        if (maxX > minX && maxY > minY) {
+          final w = crop?.width ?? original?.width ?? 1;
+          final h = crop?.height ?? original?.height ?? 1;
+          detected = Rect.fromLTRB(
+            minX / w,
+            minY / h,
+            maxX / w,
+            maxY / h,
+          );
+        }
+      }
+
       final parser = CSATParser();
       final CSATQuestion question = parser.parse(recognizedText.text);
+      setState(() {
+        _detectedRect = detected;
+      });
 
       if (!mounted) return;
       showDialog(
@@ -168,19 +202,18 @@ class _ScannerPageState extends State<ScannerPage> {
                   return Stack(
                     children: [
                       CameraPreview(_controller!),
-                      Positioned.fromRect(
-                        rect: _calculateScanRect(MediaQuery.of(context).size),
-                        child: IgnorePointer(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: Colors.greenAccent,
-                                width: 2,
+                      if (_detectedRect != null)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: _BoundingBoxPainter(
+                                _detectedRect!,
+                                MediaQuery.of(context).size,
+                                _calculateScanRect(MediaQuery.of(context).size),
                               ),
                             ),
                           ),
                         ),
-                      ),
                       if (_isScanning)
                         Container(
                           color: Colors.black45,
@@ -206,4 +239,32 @@ class _ScannerPageState extends State<ScannerPage> {
             ),
     );
   }
+
+class _BoundingBoxPainter extends CustomPainter {
+  final Rect rect;
+  final Size screenSize;
+  final Rect scanRect;
+
+  _BoundingBoxPainter(this.rect, this.screenSize, this.scanRect);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.redAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+    final converted = Rect.fromLTRB(
+      scanRect.left + rect.left * scanRect.width,
+      scanRect.top + rect.top * scanRect.height,
+      scanRect.left + rect.right * scanRect.width,
+      scanRect.top + rect.bottom * scanRect.height,
+    );
+    canvas.drawRect(converted, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BoundingBoxPainter oldDelegate) {
+    return oldDelegate.rect != rect;
+  }
+}
 }
