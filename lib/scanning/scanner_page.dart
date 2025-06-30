@@ -38,7 +38,8 @@ class _ScannerPageState extends State<ScannerPage> {
     for (int y = 0; y < src.height; y++) {
       for (int x = 0; x < src.width; x++) {
         final c = src.getPixel(x, y);
-        hist[img.getRed(c)]++;
+        final gray = c.r.clamp(0, 255).toInt(); // ensure valid range
+        hist[gray]++;
       }
     }
     final total = src.width * src.height;
@@ -59,7 +60,7 @@ class _ScannerPageState extends State<ScannerPage> {
       sumB += i * hist[i];
       final mB = sumB / wB;
       final mF = (sum - sumB) / wF;
-      final varBetween = wB * wF * math.pow(mB - mF, 2);
+      final varBetween = wB * wF * math.pow(mB - mF, 2).toDouble();
       if (varBetween > varMax) {
         varMax = varBetween;
         threshold = i;
@@ -74,9 +75,9 @@ class _ScannerPageState extends State<ScannerPage> {
     for (int y = 0; y < out.height; y++) {
       for (int x = 0; x < out.width; x++) {
         final c = out.getPixel(x, y);
-        final l = img.getRed(c); // grayscale so R=G=B
+        final l = c.r; // grayscale so R=G=B
         final v = l > t ? 255 : 0;
-        out.setPixelRgba(x, y, v, v, v);
+        out.setPixelRgba(x, y, v, v, v, 255);
       }
     }
     return out;
@@ -96,7 +97,7 @@ class _ScannerPageState extends State<ScannerPage> {
     for (int y = 0; y < height; y++) {
       int rowSum = 0;
       for (int x = 0; x < width; x++) {
-        rowSum += img.getRed(src.getPixel(x, y));
+        rowSum += src.getPixel(x, y).r.toInt();
         integral[y][x] = rowSum + (y > 0 ? integral[y - 1][x] : 0);
       }
     }
@@ -116,9 +117,9 @@ class _ScannerPageState extends State<ScannerPage> {
         if (x1 > 0 && y1 > 0) sum += integral[y1 - 1][x1 - 1];
 
         final mean = sum / area;
-        final pixel = img.getRed(src.getPixel(x, y));
+        final pixel = src.getPixel(x, y).r;
         final value = pixel > mean - offset ? 255 : 0;
-        out.setPixelRgba(x, y, value, value, value);
+        out.setPixelRgba(x, y, value, value, value, 255);
       }
     }
     return out;
@@ -306,7 +307,7 @@ class _ScannerPageState extends State<ScannerPage> {
       if (original != null) {
         // Correct orientation and preprocess the entire image.
         img.Image processed = img.bakeOrientation(original);
-        processed = img.gaussianBlur(processed, 1);
+        processed = img.gaussianBlur(processed, radius: 1);
         processed = img.grayscale(processed);
         processed = img.adjustColor(processed, contrast: 1.5);
         processed = _adaptiveBinarize(processed);
@@ -408,7 +409,7 @@ class _ScannerPageState extends State<ScannerPage> {
               ),
             ],
           ),
-        );
+        ));
       },
     );
   }
