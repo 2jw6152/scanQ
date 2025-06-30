@@ -38,7 +38,8 @@ class _ScannerPageState extends State<ScannerPage> {
     for (int y = 0; y < src.height; y++) {
       for (int x = 0; x < src.width; x++) {
         final c = src.getPixel(x, y);
-        hist[img.getRed(c)]++;
+        final gray = c.r.clamp(0, 255).toInt(); // ensure valid range
+        hist[gray]++;
       }
     }
     final total = src.width * src.height;
@@ -59,7 +60,7 @@ class _ScannerPageState extends State<ScannerPage> {
       sumB += i * hist[i];
       final mB = sumB / wB;
       final mF = (sum - sumB) / wF;
-      final varBetween = wB * wF * math.pow(mB - mF, 2);
+      final varBetween = wB * wF * math.pow(mB - mF, 2).toDouble();
       if (varBetween > varMax) {
         varMax = varBetween;
         threshold = i;
@@ -74,9 +75,9 @@ class _ScannerPageState extends State<ScannerPage> {
     for (int y = 0; y < out.height; y++) {
       for (int x = 0; x < out.width; x++) {
         final c = out.getPixel(x, y);
-        final l = img.getRed(c); // grayscale so R=G=B
+        final l = c.r; // grayscale so R=G=B
         final v = l > t ? 255 : 0;
-        out.setPixelRgba(x, y, v, v, v);
+        out.setPixelRgba(x, y, v, v, v, 255);
       }
     }
     return out;
@@ -96,7 +97,7 @@ class _ScannerPageState extends State<ScannerPage> {
     for (int y = 0; y < height; y++) {
       int rowSum = 0;
       for (int x = 0; x < width; x++) {
-        rowSum += img.getRed(src.getPixel(x, y));
+        rowSum += src.getPixel(x, y).r.toInt();
         integral[y][x] = rowSum + (y > 0 ? integral[y - 1][x] : 0);
       }
     }
@@ -116,48 +117,12 @@ class _ScannerPageState extends State<ScannerPage> {
         if (x1 > 0 && y1 > 0) sum += integral[y1 - 1][x1 - 1];
 
         final mean = sum / area;
-        final pixel = img.getRed(src.getPixel(x, y));
+        final pixel = src.getPixel(x, y).r;
         final value = pixel > mean - offset ? 255 : 0;
-        out.setPixelRgba(x, y, value, value, value);
+        out.setPixelRgba(x, y, value, value, value, 255);
       }
     }
     return out;
-  }
-
-  /// Estimate skew angle of [src] using Sobel edges.
-  double _estimateSkew(img.Image src) {
-    final sobel = img.sobel(src);
-    double sumSin = 0;
-    double sumCos = 0;
-    int count = 0;
-    for (int y = 0; y < sobel.height; y += 4) {
-      for (int x = 0; x < sobel.width; x += 4) {
-        final pixel = sobel.getPixel(x, y);
-        final gx = img.getRed(pixel) - 128;
-        final gy = img.getGreen(pixel) - 128;
-        if (gx == 0 && gy == 0) continue;
-        final angle = math.atan2(gy.toDouble(), gx.toDouble());
-        sumSin += math.sin(2 * angle);
-        sumCos += math.cos(2 * angle);
-        count++;
-      }
-    }
-    if (count == 0) return 0;
-    return 0.5 * math.atan2(sumSin / count, sumCos / count);
-  }
-
-  /// Rotate the image so that text lines are horizontal.
-  img.Image _deskew(img.Image src) {
-    final angle = _estimateSkew(src);
-    if (angle.abs() < 0.01) return src;
-    return img.copyRotate(src, -angle * 180 / math.pi);
-  }
-
-  /// Apply morphological closing to reduce wavy lines.
-  img.Image _reduceCurvature(img.Image src) {
-    final dilated = img.dilate(src, 1);
-    final eroded = img.erode(dilated, 1);
-    return eroded;
   }
 
   late final TextRecognizer _textRecognizer;
@@ -342,10 +307,8 @@ class _ScannerPageState extends State<ScannerPage> {
       if (original != null) {
         // Correct orientation and preprocess the entire image.
         img.Image processed = img.bakeOrientation(original);
-        processed = img.gaussianBlur(processed, 1);
+        processed = img.gaussianBlur(processed, radius: 1);
         processed = img.grayscale(processed);
-        processed = _deskew(processed);
-        processed = _reduceCurvature(processed);
         processed = img.adjustColor(processed, contrast: 1.5);
         processed = _adaptiveBinarize(processed);
         processedPath = '${file.path}_proc.jpg';
@@ -354,25 +317,18 @@ class _ScannerPageState extends State<ScannerPage> {
       } else {
         inputImage = InputImage.fromFile(file);
       }
-      final koreanRecognizer =
+      final textRecognizer =
           TextRecognizer(script: TextRecognitionScript.korean);
-      final latinRecognizer =
-          TextRecognizer(script: TextRecognitionScript.latin);
-      final recognizedKo = await koreanRecognizer.processImage(inputImage);
-      final recognizedLat = await latinRecognizer.processImage(inputImage);
-      await koreanRecognizer.close();
-      await latinRecognizer.close();
-      final combinedBlocks = <TextBlock>[...recognizedKo.blocks, ...recognizedLat.blocks];
-      final combinedText =
-          (recognizedKo.text + '\n' + recognizedLat.text).trim();
+      final recognizedText = await textRecognizer.processImage(inputImage);
+      await textRecognizer.close();
 
       Rect? detected;
-      if (combinedBlocks.isNotEmpty) {
+      if (recognizedText.blocks.isNotEmpty) {
         double minX = double.infinity;
         double minY = double.infinity;
         double maxX = 0;
         double maxY = 0;
-        for (final block in combinedBlocks) {
+        for (final block in recognizedText.blocks) {
           final box = block.boundingBox;
           if (box != null) {
             minX = math.min(minX, box.left.toDouble());
@@ -394,14 +350,14 @@ class _ScannerPageState extends State<ScannerPage> {
       }
 
       final parser = CSATParser();
-      final CSATQuestion question = parser.parse(combinedText);
+      final CSATQuestion question = parser.parse(recognizedText.text);
       setState(() {
         _detectedRect = detected;
       });
       if (!mounted) return;
       await _showResult(processedPath ?? file.path,
           Size((original?.width ?? 1).toDouble(), (original?.height ?? 1).toDouble()),
-          combinedBlocks,
+          recognizedText,
           question);
       await _controller!.startImageStream(_processCameraImage);
     } catch (e) {
@@ -419,7 +375,7 @@ class _ScannerPageState extends State<ScannerPage> {
   }
 
   Future<void> _showResult(String imagePath, Size imageSize,
-      List<TextBlock> blocks, CSATQuestion question) async {
+      RecognizedText recognizedText, CSATQuestion question) async {
     await showDialog(
       context: context,
       builder: (_) {
@@ -436,7 +392,8 @@ class _ScannerPageState extends State<ScannerPage> {
                       Image.file(File(imagePath), fit: BoxFit.contain),
                       Positioned.fill(
                         child: CustomPaint(
-                          painter: _BlocksPainter(blocks, imageSize),
+                          painter:
+                              _BlocksPainter(recognizedText.blocks, imageSize),
                         ),
                       ),
                     ],
@@ -452,7 +409,7 @@ class _ScannerPageState extends State<ScannerPage> {
               ),
             ],
           ),
-        );
+        ));
       },
     );
   }
