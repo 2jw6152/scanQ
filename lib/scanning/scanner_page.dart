@@ -38,8 +38,8 @@ class _ScannerPageState extends State<ScannerPage> {
     for (int y = 0; y < src.height; y++) {
       for (int x = 0; x < src.width; x++) {
         final c = src.getPixel(x, y);
-        final gray = c.r.clamp(0, 255).toInt(); // grayscale so R=G=B
-        hist[gray]++;
+        final L = c.r.clamp(0, 255).toInt(); // grayscale so R=G=B
+        hist[L]++;
       }
     }
     final total = src.width * src.height;
@@ -78,6 +78,48 @@ class _ScannerPageState extends State<ScannerPage> {
         final l = c.r; // grayscale so R=G=B
         final v = l > t ? 255 : 0;
         out.setPixelRgba(x, y, v, v, v, 255);
+      }
+    }
+    return out;
+  }
+
+  /// Perform adaptive thresholding using the mean value of a local window.
+  img.Image _adaptiveBinarize(img.Image src,
+      {int blockSize = 15, int offset = 10}) {
+    if (blockSize.isEven) blockSize += 1;
+    final width = src.width;
+    final height = src.height;
+    final half = blockSize ~/ 2;
+
+    // Compute integral image for fast area sums.
+    final integral = List.generate(
+        height, (_) => List<int>.filled(width, 0), growable: false);
+    for (int y = 0; y < height; y++) {
+      int rowSum = 0;
+      for (int x = 0; x < width; x++) {
+        rowSum += src.getPixel(x, y).r.toInt();
+        integral[y][x] = rowSum + (y > 0 ? integral[y - 1][x] : 0);
+      }
+    }
+
+    final out = img.Image.from(src);
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final x1 = (x - half).clamp(0, width - 1);
+        final y1 = (y - half).clamp(0, height - 1);
+        final x2 = (x + half).clamp(0, width - 1);
+        final y2 = (y + half).clamp(0, height - 1);
+
+        final area = (x2 - x1 + 1) * (y2 - y1 + 1);
+        int sum = integral[y2][x2];
+        if (x1 > 0) sum -= integral[y2][x1 - 1];
+        if (y1 > 0) sum -= integral[y1 - 1][x2];
+        if (x1 > 0 && y1 > 0) sum += integral[y1 - 1][x1 - 1];
+
+        final mean = sum / area;
+        final pixel = src.getPixel(x, y).r;
+        final value = pixel > mean - offset ? 255 : 0;
+        out.setPixelRgba(x, y, value, value, value, 255);
       }
     }
     return out;
@@ -295,7 +337,7 @@ class _ScannerPageState extends State<ScannerPage> {
         processed = img.gaussianBlur(processed, radius: 1);
         processed = img.grayscale(processed);
         processed = img.adjustColor(processed, contrast: 1.5);
-        processed = _binarize(processed);
+        processed = _adaptiveBinarize(processed);
         croppedPath = '${file.path}_crop.jpg';
         await File(croppedPath).writeAsBytes(img.encodeJpg(processed));
         inputImage = InputImage.fromFilePath(croppedPath);

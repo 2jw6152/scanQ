@@ -36,8 +36,8 @@ enhanced before recognition:
 - Only the region inside the scan box is cropped for processing.
 - The cropped image is blurred slightly to remove noise then converted to
   grayscale.
-- Contrast is increased and the image is binarized using Otsu's method so text
-  appears clearly under various lighting conditions.
+- Contrast is increased and the image is binarized with adaptive thresholding
+  so text remains clear even under uneven lighting.
 - The processed image with detected text blocks is shown after each scan so you
   can verify the OCR result visually.
 
