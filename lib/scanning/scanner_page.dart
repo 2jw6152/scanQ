@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:async';
 import 'package:image/image.dart' as img;
 
 import 'package:camera/camera.dart';
@@ -25,18 +26,57 @@ class _ScannerPageState extends State<ScannerPage> {
   bool _isScanning = false;
   Rect? _detectedRect; // normalized rect within the scan area
   Offset? _lastTap;
+  Timer? _focusTimer;
 
   bool _processingImage = false;
   DateTime _lastDetection = DateTime.fromMillisecondsSinceEpoch(0);
   static const _detectionInterval = Duration(milliseconds: 700);
 
-  img.Image _binarize(img.Image src, {int threshold = 150}) {
+  /// Compute an Otsu threshold for the given grayscale image.
+  int _otsuThreshold(img.Image src) {
+    final hist = List<int>.filled(256, 0);
+    for (int y = 0; y < src.height; y++) {
+      for (int x = 0; x < src.width; x++) {
+        final c = src.getPixel(x, y);
+        final gray = c.r.clamp(0, 255).toInt(); // grayscale so R=G=B
+        hist[gray]++;
+      }
+    }
+    final total = src.width * src.height;
+    double sum = 0;
+    for (int i = 0; i < 256; i++) {
+      sum += i * hist[i];
+    }
+    double sumB = 0;
+    int wB = 0;
+    int wF = 0;
+    double varMax = 0;
+    int threshold = 0;
+    for (int i = 0; i < 256; i++) {
+      wB += hist[i];
+      if (wB == 0) continue;
+      wF = total - wB;
+      if (wF == 0) break;
+      sumB += i * hist[i];
+      final mB = sumB / wB;
+      final mF = (sum - sumB) / wF;
+      final varBetween = wB * wF * math.pow(mB - mF, 2).toDouble();
+      if (varBetween > varMax) {
+        varMax = varBetween;
+        threshold = i;
+      }
+    }
+    return threshold;
+  }
+
+  img.Image _binarize(img.Image src, {int? threshold}) {
     final out = img.Image.from(src);
+    final t = threshold ?? _otsuThreshold(src);
     for (int y = 0; y < out.height; y++) {
       for (int x = 0; x < out.width; x++) {
         final c = out.getPixel(x, y);
         final l = c.r; // grayscale so R=G=B
-        final v = l > threshold ? 255 : 0;
+        final v = l > t ? 255 : 0;
         out.setPixelRgba(x, y, v, v, v, 255);
       }
     }
@@ -123,6 +163,7 @@ class _ScannerPageState extends State<ScannerPage> {
     _controller?.stopImageStream();
     _controller?.dispose();
     _textRecognizer.close();
+    _focusTimer?.cancel();
     super.dispose();
   }
 
@@ -132,7 +173,17 @@ class _ScannerPageState extends State<ScannerPage> {
       details.localPosition.dx / constraints.maxWidth,
       details.localPosition.dy / constraints.maxHeight,
     );
-    _lastTap = offset;
+    setState(() {
+      _lastTap = offset;
+    });
+    _focusTimer?.cancel();
+    _focusTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _lastTap = null;
+        });
+      }
+    });
     _controller?.setFocusPoint(offset);
     _controller?.setExposurePoint(offset);
     _controller?.setFocusMode(FocusMode.auto);
@@ -241,7 +292,7 @@ class _ScannerPageState extends State<ScannerPage> {
           width: crop.width.toInt(),
           height: crop.height.toInt(),
         );
-        processed = img.gaussianBlur(processed, radius:1);
+        processed = img.gaussianBlur(processed, radius: 1);
         processed = img.grayscale(processed);
         processed = img.adjustColor(processed, contrast: 1.5);
         processed = _binarize(processed);

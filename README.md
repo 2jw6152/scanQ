@@ -29,14 +29,15 @@ formulas found in the text so you can verify them separately.
 
 ScanQ captures photos using the highest available camera resolution and
 preprocesses them before OCR. You can tap the preview to manually adjust the
-focus point, which is shown with a yellow circle. Photos are enhanced before
-recognition:
+focus point, which briefly shows a yellow circle while focusing. Photos are
+enhanced before recognition:
 
 - The captured image orientation is fixed to avoid rotated text.
 - Only the region inside the scan box is cropped for processing.
 - The cropped image is blurred slightly to remove noise then converted to
   grayscale.
-- Contrast is increased and the image is binarized so text appears clearly.
+- Contrast is increased and the image is binarized using Otsu's method so text
+  appears clearly under various lighting conditions.
 - The processed image with detected text blocks is shown after each scan so you
   can verify the OCR result visually.
 
