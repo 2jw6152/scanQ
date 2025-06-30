@@ -38,7 +38,8 @@ class _ScannerPageState extends State<ScannerPage> {
     for (int y = 0; y < src.height; y++) {
       for (int x = 0; x < src.width; x++) {
         final c = src.getPixel(x, y);
-        hist[img.getRed(c)]++;
+        final gray = c.r.clamp(0, 255).toInt(); // grayscale so R=G=B
+        hist[gray]++;
       }
     }
     final total = src.width * src.height;
@@ -59,7 +60,7 @@ class _ScannerPageState extends State<ScannerPage> {
       sumB += i * hist[i];
       final mB = sumB / wB;
       final mF = (sum - sumB) / wF;
-      final varBetween = wB * wF * math.pow(mB - mF, 2);
+      final varBetween = wB * wF * math.pow(mB - mF, 2).toDouble();
       if (varBetween > varMax) {
         varMax = varBetween;
         threshold = i;
@@ -74,9 +75,9 @@ class _ScannerPageState extends State<ScannerPage> {
     for (int y = 0; y < out.height; y++) {
       for (int x = 0; x < out.width; x++) {
         final c = out.getPixel(x, y);
-        final l = img.getRed(c); // grayscale so R=G=B
+        final l = c.r; // grayscale so R=G=B
         final v = l > t ? 255 : 0;
-        out.setPixelRgba(x, y, v, v, v);
+        out.setPixelRgba(x, y, v, v, v, 255);
       }
     }
     return out;
@@ -291,7 +292,7 @@ class _ScannerPageState extends State<ScannerPage> {
           width: crop.width.toInt(),
           height: crop.height.toInt(),
         );
-        processed = img.gaussianBlur(processed, 1);
+        processed = img.gaussianBlur(processed, radius: 1);
         processed = img.grayscale(processed);
         processed = img.adjustColor(processed, contrast: 1.5);
         processed = _binarize(processed);
@@ -394,7 +395,7 @@ class _ScannerPageState extends State<ScannerPage> {
               ),
             ],
           ),
-        );
+        ));
       },
     );
   }
