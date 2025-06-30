@@ -38,8 +38,8 @@ class _ScannerPageState extends State<ScannerPage> {
     for (int y = 0; y < src.height; y++) {
       for (int x = 0; x < src.width; x++) {
         final c = src.getPixel(x, y);
-        final L = c.r.clamp(0, 255).toInt(); // grayscale so R=G=B
-        hist[L]++;
+        final gray = c.r.clamp(0, 255).toInt(); // ensure valid range
+        hist[gray]++;
       }
     }
     final total = src.width * src.height;
@@ -130,24 +130,6 @@ class _ScannerPageState extends State<ScannerPage> {
   // Relative scan area (percent of preview) shown with a bounding box.
   static const Rect _relativeScanRect =
       Rect.fromLTWH(0.1, 0.25, 0.8, 0.5); // left, top, width, height
-
-  Rect _calculateScanRect(Size size) {
-    return Rect.fromLTWH(
-      size.width * _relativeScanRect.left,
-      size.height * _relativeScanRect.top,
-      size.width * _relativeScanRect.width,
-      size.height * _relativeScanRect.height,
-    );
-  }
-
-  Rect _imageCropRect(int width, int height) {
-    return Rect.fromLTWH(
-      width * _relativeScanRect.left,
-      height * _relativeScanRect.top,
-      width * _relativeScanRect.width,
-      height * _relativeScanRect.height,
-    );
-  }
 
   @override
   void initState() {
@@ -321,26 +303,17 @@ class _ScannerPageState extends State<ScannerPage> {
       final bytes = await file.readAsBytes();
       final img.Image? original = img.decodeImage(bytes);
       late final InputImage inputImage;
-      Rect? crop;
-      String? croppedPath;
+      String? processedPath;
       if (original != null) {
-        // Correct the orientation and enhance the image for better recognition.
+        // Correct orientation and preprocess the entire image.
         img.Image processed = img.bakeOrientation(original);
-        crop = _imageCropRect(processed.width, processed.height);
-        processed = img.copyCrop(
-          processed,
-          x: crop.left.toInt(),
-          y: crop.top.toInt(),
-          width: crop.width.toInt(),
-          height: crop.height.toInt(),
-        );
         processed = img.gaussianBlur(processed, radius: 1);
         processed = img.grayscale(processed);
         processed = img.adjustColor(processed, contrast: 1.5);
         processed = _adaptiveBinarize(processed);
-        croppedPath = '${file.path}_crop.jpg';
-        await File(croppedPath).writeAsBytes(img.encodeJpg(processed));
-        inputImage = InputImage.fromFilePath(croppedPath);
+        processedPath = '${file.path}_proc.jpg';
+        await File(processedPath).writeAsBytes(img.encodeJpg(processed));
+        inputImage = InputImage.fromFilePath(processedPath);
       } else {
         inputImage = InputImage.fromFile(file);
       }
@@ -365,8 +338,8 @@ class _ScannerPageState extends State<ScannerPage> {
           }
         }
         if (maxX > minX && maxY > minY) {
-          final w = crop?.width ?? original?.width ?? 1;
-          final h = crop?.height ?? original?.height ?? 1;
+          final w = original?.width ?? 1;
+          final h = original?.height ?? 1;
           detected = Rect.fromLTRB(
             minX / w,
             minY / h,
@@ -382,9 +355,8 @@ class _ScannerPageState extends State<ScannerPage> {
         _detectedRect = detected;
       });
       if (!mounted) return;
-      await _showResult(croppedPath ?? file.path,
-          Size((crop?.width ?? original?.width ?? 1).toDouble(),
-              (crop?.height ?? original?.height ?? 1).toDouble()),
+      await _showResult(processedPath ?? file.path,
+          Size((original?.width ?? 1).toDouble(), (original?.height ?? 1).toDouble()),
           recognizedText,
           question);
       await _controller!.startImageStream(_processCameraImage);
@@ -478,8 +450,11 @@ class _ScannerPageState extends State<ScannerPage> {
                             child: CustomPaint(
                               painter: _BoundingBoxPainter(
                                 _detectedRect!,
-                                MediaQuery.of(context).size,
-                                _calculateScanRect(MediaQuery.of(context).size),
+                                Rect.fromLTWH(
+                                    0,
+                                    0,
+                                    MediaQuery.of(context).size.width,
+                                    MediaQuery.of(context).size.height),
                               ),
                             ),
                           ),
@@ -545,10 +520,9 @@ class _BlocksPainter extends CustomPainter {
 
 class _BoundingBoxPainter extends CustomPainter {
   final Rect rect;
-  final Size screenSize;
   final Rect scanRect;
 
-  _BoundingBoxPainter(this.rect, this.screenSize, this.scanRect);
+  _BoundingBoxPainter(this.rect, this.scanRect);
 
   @override
   void paint(Canvas canvas, Size size) {

@@ -33,8 +33,9 @@ focus point, which briefly shows a yellow circle while focusing. Photos are
 enhanced before recognition:
 
 - The captured image orientation is fixed to avoid rotated text.
-- Only the region inside the scan box is cropped for processing.
-- The cropped image is blurred slightly to remove noise then converted to
+- The entire photo is processed first, and the question area is detected
+  afterward.
+- The image is blurred slightly to remove noise then converted to
   grayscale.
 - Contrast is increased and the image is binarized with adaptive thresholding
   so text remains clear even under uneven lighting.
