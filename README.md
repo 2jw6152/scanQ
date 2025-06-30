@@ -39,6 +39,8 @@ enhanced before recognition:
   grayscale.
 - Contrast is increased and the image is binarized with adaptive thresholding
   so text remains clear even under uneven lighting.
+- Detected skew is corrected using edge analysis and the image is morphed to
+  reduce page curvature and line distortion before recognition.
 - The processed image with detected text blocks is shown after each scan so you
   can verify the OCR result visually.
 
@@ -47,6 +49,10 @@ These steps help Google MLKit produce more accurate recognition results.
 Additionally the camera image stream now provides the row stride
 (bytesPerRow) of the image so MLKit can correctly interpret YUV frames.
 This helps reduce recognition errors on some devices.
+
+For mathematical expressions the app now runs OCR twice, once with the Korean
+script recognizer and once with the Latin recognizer. The results are merged so
+numbers and symbols in formulas are less likely to be missed.
 
 Math formulas detected in the recognized text are extracted and stored with
 each question so they can be handled separately in the future.
