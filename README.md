@@ -16,8 +16,9 @@ Run `flutter pub get` to install dependencies.
 
 Use `flutter run` to launch the app on an Android device or emulator.
 
-On the scanner screen tap the floating camera button to capture a photo. The
-recognized text is shown in a dialog so you can verify that OCR succeeded. While
+On the scanner screen tap the floating camera button to capture a photo. After
+processing, the captured image is shown with green boxes around each detected
+text block so you can verify what was recognized. While
 the camera preview is running the app continuously performs lightweight OCR and
 draws a red bounding box over the scan area when text is detected. Only the
 scanning region is processed for the final capture which can help prevent
@@ -27,12 +28,17 @@ formulas found in the text so you can verify them separately.
 ### Improving OCR quality
 
 ScanQ captures photos using the highest available camera resolution and
-preprocesses them before OCR:
+preprocesses them before OCR. You can tap the preview to manually adjust the
+focus point, which is shown with a yellow circle. Photos are enhanced before
+recognition:
 
 - The captured image orientation is fixed to avoid rotated text.
 - Only the region inside the scan box is cropped for processing.
-- The cropped image is converted to grayscale and the contrast is increased to
-  make characters stand out.
+- The cropped image is blurred slightly to remove noise then converted to
+  grayscale.
+- Contrast is increased and the image is binarized so text appears clearly.
+- The processed image with detected text blocks is shown after each scan so you
+  can verify the OCR result visually.
 
 These steps help Google MLKit produce more accurate recognition results.
 

@@ -24,10 +24,24 @@ class _ScannerPageState extends State<ScannerPage> {
   Future<void>? _initializeControllerFuture;
   bool _isScanning = false;
   Rect? _detectedRect; // normalized rect within the scan area
+  Offset? _lastTap;
 
   bool _processingImage = false;
   DateTime _lastDetection = DateTime.fromMillisecondsSinceEpoch(0);
   static const _detectionInterval = Duration(milliseconds: 700);
+
+  img.Image _binarize(img.Image src, {int threshold = 150}) {
+    final out = img.Image.from(src);
+    for (int y = 0; y < out.height; y++) {
+      for (int x = 0; x < out.width; x++) {
+        final c = out.getPixel(x, y);
+        final l = img.getRed(c); // grayscale so R=G=B
+        final v = l > threshold ? 255 : 0;
+        out.setPixelRgba(x, y, v, v, v);
+      }
+    }
+    return out;
+  }
 
   late final TextRecognizer _textRecognizer;
 
@@ -110,6 +124,18 @@ class _ScannerPageState extends State<ScannerPage> {
     _controller?.dispose();
     _textRecognizer.close();
     super.dispose();
+  }
+
+  void _onViewFinderTap(
+      TapDownDetails details, BoxConstraints constraints) {
+    final offset = Offset(
+      details.localPosition.dx / constraints.maxWidth,
+      details.localPosition.dy / constraints.maxHeight,
+    );
+    _lastTap = offset;
+    _controller?.setFocusPoint(offset);
+    _controller?.setExposurePoint(offset);
+    _controller?.setFocusMode(FocusMode.auto);
   }
 
   Future<void> _processCameraImage(CameraImage image) async {
@@ -203,6 +229,7 @@ class _ScannerPageState extends State<ScannerPage> {
       final img.Image? original = img.decodeImage(bytes);
       late final InputImage inputImage;
       Rect? crop;
+      String? croppedPath;
       if (original != null) {
         // Correct the orientation and enhance the image for better recognition.
         img.Image processed = img.bakeOrientation(original);
@@ -214,9 +241,11 @@ class _ScannerPageState extends State<ScannerPage> {
           width: crop.width.toInt(),
           height: crop.height.toInt(),
         );
+        processed = img.gaussianBlur(processed, 1);
         processed = img.grayscale(processed);
-        processed = img.adjustColor(processed, contrast: 1.2);
-        final croppedPath = '${file.path}_crop.jpg';
+        processed = img.adjustColor(processed, contrast: 1.5);
+        processed = _binarize(processed);
+        croppedPath = '${file.path}_crop.jpg';
         await File(croppedPath).writeAsBytes(img.encodeJpg(processed));
         inputImage = InputImage.fromFilePath(croppedPath);
       } else {
@@ -259,32 +288,12 @@ class _ScannerPageState extends State<ScannerPage> {
       setState(() {
         _detectedRect = detected;
       });
-
       if (!mounted) return;
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Recognized Question'),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(question.body),
-                if (question.formulas.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  const Text('Formulas:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  for (final f in question.formulas) Text(f),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'))
-          ],
-        ),
-      );
+      await _showResult(croppedPath ?? file.path,
+          Size((crop?.width ?? original?.width ?? 1).toDouble(),
+              (crop?.height ?? original?.height ?? 1).toDouble()),
+          recognizedText,
+          question);
       await _controller!.startImageStream(_processCameraImage);
     } catch (e) {
       if (mounted) {
@@ -300,6 +309,46 @@ class _ScannerPageState extends State<ScannerPage> {
     }
   }
 
+  Future<void> _showResult(String imagePath, Size imageSize,
+      RecognizedText recognizedText, CSATQuestion question) async {
+    await showDialog(
+      context: context,
+      builder: (_) {
+        return Dialog(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AspectRatio(
+                  aspectRatio: imageSize.width / imageSize.height,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.file(File(imagePath), fit: BoxFit.contain),
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter:
+                              _BlocksPainter(recognizedText.blocks, imageSize),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(question.body),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -312,7 +361,24 @@ class _ScannerPageState extends State<ScannerPage> {
                 if (snapshot.connectionState == ConnectionState.done) {
                   return Stack(
                     children: [
-                      CameraPreview(_controller!),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          return GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTapDown: (details) =>
+                                _onViewFinderTap(details, constraints),
+                            child: CameraPreview(_controller!),
+                          );
+                        },
+                      ),
+                      if (_lastTap != null)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              painter: _FocusPointPainter(_lastTap!),
+                            ),
+                          ),
+                        ),
                       if (_detectedRect != null)
                         Positioned.fill(
                           child: IgnorePointer(
@@ -352,6 +418,38 @@ class _ScannerPageState extends State<ScannerPage> {
   }
 }
 
+class _BlocksPainter extends CustomPainter {
+  final List<TextBlock> blocks;
+  final Size imageSize;
+
+  _BlocksPainter(this.blocks, this.imageSize);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.greenAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    for (final block in blocks) {
+      final box = block.boundingBox;
+      if (box != null) {
+        final rect = Rect.fromLTRB(
+          box.left / imageSize.width * size.width,
+          box.top / imageSize.height * size.height,
+          box.right / imageSize.width * size.width,
+          box.bottom / imageSize.height * size.height,
+        );
+        canvas.drawRect(rect, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BlocksPainter oldDelegate) {
+    return oldDelegate.blocks != blocks;
+  }
+}
+
 class _BoundingBoxPainter extends CustomPainter {
   final Rect rect;
   final Size screenSize;
@@ -377,5 +475,26 @@ class _BoundingBoxPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _BoundingBoxPainter oldDelegate) {
     return oldDelegate.rect != rect;
+  }
+}
+
+class _FocusPointPainter extends CustomPainter {
+  final Offset offset;
+  _FocusPointPainter(this.offset);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final point = Offset(offset.dx * size.width, offset.dy * size.height);
+    final paint = Paint()
+      ..color = Colors.yellowAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    const radius = 20.0;
+    canvas.drawCircle(point, radius, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _FocusPointPainter oldDelegate) {
+    return oldDelegate.offset != offset;
   }
 }
